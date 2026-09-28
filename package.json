@@ -1,0 +1,9 @@
+{
+  "name": "forese-backend",
+  "version": "1.0.0",
+  "description": "Student Management REST API workspace",
+  "scripts": {
+    "start": "npm start --prefix student-management-api",
+    "dev": "npm run dev --prefix student-management-api"
+  }
+}

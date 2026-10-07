@@ -1,11 +1,13 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const Student = require('../models/Student');
 
 const router = express.Router();
 
-// Helper function to validate MongoDB ObjectId
-const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+// Helper function to validate positive integer ID
+const isValidId = (id) => {
+  const num = Number(id);
+  return Number.isInteger(num) && num > 0;
+};
 
 // ==========================================
 // POST /students - Add a new student
@@ -15,31 +17,50 @@ router.post('/', async (req, res) => {
     const { name, rollNumber, department, year } = req.body;
 
     // Validate that required fields are present in the request body
-    if (!name || !rollNumber || !department || year === undefined) {
+    if (
+      !name ||
+      !rollNumber ||
+      !department ||
+      year === undefined ||
+      year === null ||
+      typeof name !== 'string' ||
+      name.trim() === '' ||
+      typeof rollNumber !== 'string' ||
+      rollNumber.trim() === '' ||
+      typeof department !== 'string' ||
+      department.trim() === ''
+    ) {
       return res.status(400).json({
         success: false,
         message: 'Please provide all required fields: name, rollNumber, department, year',
       });
     }
 
-    // Check if a student with the same rollNumber already exists
-    const existingStudent = await Student.findOne({ rollNumber });
-    if (existingStudent) {
-      return res.status(409).json({
+    // Validate year range (between 1 and 4)
+    const numYear = Number(year);
+    if (!Number.isInteger(numYear) || numYear < 1 || numYear > 4) {
+      return res.status(400).json({
         success: false,
-        message: `Student with roll number '${rollNumber}' already exists`,
+        message: 'Year must be an integer between 1 and 4',
       });
     }
 
-    // Create and save new student
-    const newStudent = new Student({
+    // Check if a student with the same rollNumber already exists
+    const existingStudent = await Student.findByRollNumber(rollNumber);
+    if (existingStudent) {
+      return res.status(409).json({
+        success: false,
+        message: `Student with roll number '${rollNumber.trim()}' already exists`,
+      });
+    }
+
+    // Create and save new student in SQLite
+    const savedStudent = await Student.create({
       name,
       rollNumber,
       department,
-      year,
+      year: numYear,
     });
-
-    const savedStudent = await newStudent.save();
 
     return res.status(201).json({
       success: true,
@@ -47,18 +68,8 @@ router.post('/', async (req, res) => {
       data: savedStudent,
     });
   } catch (error) {
-    // Handle Mongoose validation errors
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map((val) => val.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation Error',
-        errors: messages,
-      });
-    }
-
-    // Handle MongoDB duplicate key error (code 11000)
-    if (error.code === 11000) {
+    // Handle SQLite unique constraint error
+    if (error.code === 'SQLITE_CONSTRAINT' && error.message.includes('UNIQUE')) {
       return res.status(409).json({
         success: false,
         message: 'A student with this roll number already exists',
@@ -79,7 +90,7 @@ router.post('/', async (req, res) => {
 // ==========================================
 router.get('/', async (req, res) => {
   try {
-    const students = await Student.find().sort({ createdAt: -1 });
+    const students = await Student.findAll();
 
     return res.status(200).json({
       success: true,
@@ -102,8 +113,8 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate MongoDB ObjectId format
-    if (!isValidObjectId(id)) {
+    // Validate ID format
+    if (!isValidId(id)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid student ID format',
@@ -141,8 +152,8 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { name, rollNumber, department, year } = req.body;
 
-    // Validate MongoDB ObjectId format
-    if (!isValidObjectId(id)) {
+    // Validate ID format
+    if (!isValidId(id)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid student ID format',
@@ -158,26 +169,52 @@ router.put('/:id', async (req, res) => {
       });
     }
 
-    // If updating rollNumber, verify no OTHER student has it
-    if (rollNumber && rollNumber !== student.rollNumber) {
-      const duplicateStudent = await Student.findOne({
-        rollNumber,
-        _id: { $ne: id },
-      });
-      if (duplicateStudent) {
-        return res.status(409).json({
+    // Validate year if provided
+    if (year !== undefined) {
+      const numYear = Number(year);
+      if (!Number.isInteger(numYear) || numYear < 1 || numYear > 4) {
+        return res.status(400).json({
           success: false,
-          message: `Student with roll number '${rollNumber}' already exists`,
+          message: 'Year must be an integer between 1 and 4',
         });
       }
     }
 
-    // Perform update with validation enabled
-    const updatedStudent = await Student.findByIdAndUpdate(
-      id,
-      { name, rollNumber, department, year },
-      { new: true, runValidators: true }
-    );
+    // Validate string fields if provided
+    if (name !== undefined && (typeof name !== 'string' || name.trim() === '')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student name cannot be empty',
+      });
+    }
+
+    if (rollNumber !== undefined && (typeof rollNumber !== 'string' || rollNumber.trim() === '')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Roll number cannot be empty',
+      });
+    }
+
+    if (department !== undefined && (typeof department !== 'string' || department.trim() === '')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Department cannot be empty',
+      });
+    }
+
+    // If updating rollNumber, verify no OTHER student has it
+    if (rollNumber && rollNumber.trim() !== student.rollNumber) {
+      const duplicateStudent = await Student.findByRollNumber(rollNumber);
+      if (duplicateStudent && duplicateStudent.id !== Number(id)) {
+        return res.status(409).json({
+          success: false,
+          message: `Student with roll number '${rollNumber.trim()}' already exists`,
+        });
+      }
+    }
+
+    // Perform update in SQLite
+    const updatedStudent = await Student.update(id, { name, rollNumber, department, year });
 
     return res.status(200).json({
       success: true,
@@ -185,18 +222,8 @@ router.put('/:id', async (req, res) => {
       data: updatedStudent,
     });
   } catch (error) {
-    // Handle Mongoose validation errors
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map((val) => val.message);
-      return res.status(400).json({
-        success: false,
-        message: 'Validation Error',
-        errors: messages,
-      });
-    }
-
-    // Handle duplicate key error
-    if (error.code === 11000) {
+    // Handle unique constraint error
+    if (error.code === 'SQLITE_CONSTRAINT' && error.message.includes('UNIQUE')) {
       return res.status(409).json({
         success: false,
         message: 'A student with this roll number already exists',
@@ -218,15 +245,15 @@ router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate MongoDB ObjectId format
-    if (!isValidObjectId(id)) {
+    // Validate ID format
+    if (!isValidId(id)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid student ID format',
       });
     }
 
-    const deletedStudent = await Student.findByIdAndDelete(id);
+    const deletedStudent = await Student.delete(id);
 
     // Return 404 if student does not exist
     if (!deletedStudent) {

@@ -1,11 +1,10 @@
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
+const { initDb } = require('./database');
 const studentRoutes = require('./routes/studentRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/student_db';
 
 // Middleware to parse incoming JSON bodies
 app.use(express.json());
@@ -49,16 +48,14 @@ app.use((err, req, res, next) => {
 });
 
 // ==========================================
-// Connect to MongoDB and Start Server
+// Initialize SQLite Database and Start Server
 // ==========================================
-mongoose
-  .connect(MONGO_URI)
+initDb()
   .then(() => {
-    console.log('Successfully connected to MongoDB.');
+    console.log('SQLite database and table ready.');
   })
   .catch((err) => {
-    console.error('Failed to connect to MongoDB:', err.message);
-    console.log('Please ensure MongoDB is running or configure MONGO_URI in .env');
+    console.error('Failed to initialize SQLite database:', err.message);
   });
 
 const server = app.listen(PORT, () => {

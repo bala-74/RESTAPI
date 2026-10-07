@@ -4,6 +4,7 @@
   "description": "Student Management REST API workspace",
   "scripts": {
     "start": "npm start --prefix student-management-api",
-    "dev": "npm run dev --prefix student-management-api"
+    "dev": "npm run dev --prefix student-management-api",
+    "test": "npm test --prefix student-management-api"
   }
 }

@@ -1,12 +1,12 @@
 # Student Management REST API
 
-A clean and simple RESTful API for managing student records, built with **Node.js**, **Express.js**, and **MongoDB** with **Mongoose**.
+A clean and simple RESTful API for managing student records, built with **Node.js**, **Express.js**, and **SQLite** (using `sqlite3`).
 
 ---
 
 ## 📌 Project Overview
 
-This API allows you to perform full CRUD (Create, Read, Update, Delete) operations on student information. It includes schema-level validation, unique constraints on student roll numbers, and clean error handling for database operations and invalid inputs.
+This API allows you to perform full CRUD (Create, Read, Update, Delete) operations on student information stored in a local SQLite database file. It includes input validation, unique constraints on student roll numbers, year range checks, and clean error handling for database operations and invalid inputs.
 
 ---
 
@@ -14,8 +14,7 @@ This API allows you to perform full CRUD (Create, Read, Update, Delete) operatio
 
 - **Node.js** - JavaScript runtime environment
 - **Express.js** - Web framework for Node.js
-- **MongoDB** - NoSQL document database
-- **Mongoose** - Object Data Modeling (ODM) library for MongoDB
+- **SQLite** (`sqlite3`) - Embedded, zero-configuration relational database engine
 - **dotenv** - Environment variable management
 
 ---
@@ -24,14 +23,17 @@ This API allows you to perform full CRUD (Create, Read, Update, Delete) operatio
 
 ```text
 student-management-api/
+├── database.js             # SQLite connection, query helpers, and table auto-creation
+├── database.sqlite         # Local SQLite database file (created automatically)
 ├── models/
-│   └── Student.js          # Mongoose schema and model
+│   └── Student.js          # Student data access model with CRUD operations
 ├── routes/
 │   └── studentRoutes.js    # Express route handlers for /students
-├── .env                    # Environment configuration (PORT, MONGO_URI)
-├── .gitignore              # Files to ignore in git (node_modules, .env)
+├── test.js                 # Automated CRUD and validation tests
+├── .env                    # Environment configuration (PORT, DB_PATH)
+├── .gitignore              # Files to ignore in git (node_modules, .env, *.sqlite)
 ├── package.json            # Project dependencies and npm scripts
-├── server.js               # Entry point, Express configuration & MongoDB connection
+├── server.js               # Application entry point & Express configuration
 └── README.md               # Documentation
 ```
 
@@ -44,32 +46,24 @@ student-management-api/
    cd student-management-api
    ```
 
-2. Install the required dependencies:
+2. Install dependencies:
    ```bash
    npm install
    ```
 
 ---
 
-## 🔧 How to Configure MongoDB
+## 🔧 Environment Configuration
 
-Create or update the `.env` file in the root of the project:
+The application uses a `.env` file in the `student-management-api` root folder:
 
 ```env
 PORT=5000
-MONGO_URI=mongodb://127.0.0.1:27017/student_db
+DB_PATH=./database.sqlite
 ```
 
-### Options for MongoDB:
-1. **Local MongoDB**:
-   - Ensure the MongoDB daemon (`mongod`) is running on your local machine.
-   - Default URI: `mongodb://127.0.0.1:27017/student_db`
-2. **MongoDB Atlas (Cloud)**:
-   - Create a free cluster on [MongoDB Atlas](https://www.mongodb.com/cloud/atlas).
-   - Replace `MONGO_URI` with your connection string:
-     ```env
-     MONGO_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/student_db?retryWrites=true&w=majority
-     ```
+- **`PORT`**: Port number for the Express server (defaults to `5000`).
+- **`DB_PATH`**: Path to the SQLite database file (defaults to `./database.sqlite`). The database file and `students` table are created automatically on server startup if they do not already exist.
 
 ---
 
@@ -87,29 +81,37 @@ npm run dev
 
 The server will start listening at `http://localhost:5000`.
 
+### Run Automated Tests:
+```bash
+npm test
+```
+
 ---
 
 ## 📡 API Endpoints
 
-| Method | Endpoint         | Description                         | Success Status | Error Status |
-|--------|------------------|-------------------------------------|----------------|--------------|
-| `GET`  | `/health`        | Health check confirmation           | `200 OK`       | -            |
-| `POST` | `/students`      | Add a new student                   | `201 Created`  | `400 / 409`  |
-| `GET`  | `/students`      | Retrieve all students               | `200 OK`       | `500`        |
-| `GET`  | `/students/:id`  | Retrieve a single student by ID     | `200 OK`       | `400 / 404`  |
-| `PUT`  | `/students/:id`  | Update a student's details by ID    | `200 OK`       | `400 / 404 / 409` |
-| `DELETE`| `/students/:id` | Delete a student by ID              | `200 OK`       | `400 / 404`  |
+| Method   | Endpoint        | Description                         | Success Status | Error Status       |
+|----------|-----------------|-------------------------------------|----------------|--------------------|
+| `GET`    | `/health`       | Health check confirmation           | `200 OK`       | -                  |
+| `POST`   | `/students`     | Add a new student                   | `201 Created`  | `400 / 409 / 500`  |
+| `GET`    | `/students`     | Retrieve all students               | `200 OK`       | `500`              |
+| `GET`    | `/students/:id` | Retrieve a single student by ID     | `200 OK`       | `400 / 404 / 500`  |
+| `PUT`    | `/students/:id` | Update a student's details by ID    | `200 OK`       | `400 / 404 / 409`  |
+| `DELETE` | `/students/:id` | Delete a student by ID              | `200 OK`       | `400 / 404 / 500`  |
 
 ---
 
 ## 📝 Student Data Model
 
-| Field        | Type   | Rules                                   |
-|--------------|--------|-----------------------------------------|
-| `name`       | String | Required, trimmed                       |
-| `rollNumber` | String | Required, unique, trimmed               |
-| `department` | String | Required, trimmed                       |
-| `year`       | Number | Required, integer between `1` and `4`   |
+| Field        | Type    | Rules                                  |
+|--------------|---------|----------------------------------------|
+| `id`         | Integer | Primary key, auto-incremented          |
+| `name`       | String  | Required, non-empty, trimmed           |
+| `rollNumber` | String  | Required, unique, trimmed              |
+| `department` | String  | Required, non-empty, trimmed           |
+| `year`       | Integer | Required, integer between `1` and `4`  |
+| `createdAt`  | String  | Timestamp generated on creation        |
+| `updatedAt`  | String  | Timestamp updated on changes           |
 
 ---
 
@@ -117,7 +119,7 @@ The server will start listening at `http://localhost:5000`.
 
 ### 1. Health Check
 - **Request:** `GET http://localhost:5000/health`
-- **Response:**
+- **Response (200 OK):**
   ```json
   {
     "status": "OK",
@@ -143,14 +145,13 @@ The server will start listening at `http://localhost:5000`.
     "success": true,
     "message": "Student created successfully",
     "data": {
-      "_id": "673f8a9e2b1c4e001f3a9b12",
+      "id": 1,
       "name": "Jane Doe",
       "rollNumber": "CS2026001",
       "department": "Computer Science",
       "year": 3,
-      "createdAt": "2026-09-28T14:00:00.000Z",
-      "updatedAt": "2026-09-28T14:00:00.000Z",
-      "__v": 0
+      "createdAt": "2026-10-07 14:30:00",
+      "updatedAt": "2026-10-07 14:30:00"
     }
   }
   ```
@@ -164,21 +165,52 @@ The server will start listening at `http://localhost:5000`.
     "count": 1,
     "data": [
       {
-        "_id": "673f8a9e2b1c4e001f3a9b12",
+        "id": 1,
         "name": "Jane Doe",
         "rollNumber": "CS2026001",
         "department": "Computer Science",
         "year": 3,
-        "createdAt": "2026-09-28T14:00:00.000Z",
-        "updatedAt": "2026-09-28T14:00:00.000Z",
-        "__v": 0
+        "createdAt": "2026-10-07 14:30:00",
+        "updatedAt": "2026-10-07 14:30:00"
       }
     ]
   }
   ```
 
-### 4. Update Student Details
-- **Request:** `PUT http://localhost:5000/students/673f8a9e2b1c4e001f3a9b12`
+### 4. Get a Single Student by ID
+- **Request:** `GET http://localhost:5000/students/1`
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "name": "Jane Doe",
+      "rollNumber": "CS2026001",
+      "department": "Computer Science",
+      "year": 3,
+      "createdAt": "2026-10-07 14:30:00",
+      "updatedAt": "2026-10-07 14:30:00"
+    }
+  }
+  ```
+- **Response if Invalid ID (`GET /students/abc` - 400 Bad Request):**
+  ```json
+  {
+    "success": false,
+    "message": "Invalid student ID format"
+  }
+  ```
+- **Response if Not Found (`GET /students/999` - 404 Not Found):**
+  ```json
+  {
+    "success": false,
+    "message": "Student not found"
+  }
+  ```
+
+### 5. Update Student Details
+- **Request:** `PUT http://localhost:5000/students/1`
 - **Headers:** `Content-Type: application/json`
 - **Body:**
   ```json
@@ -192,31 +224,47 @@ The server will start listening at `http://localhost:5000`.
     "success": true,
     "message": "Student updated successfully",
     "data": {
-      "_id": "673f8a9e2b1c4e001f3a9b12",
+      "id": 1,
       "name": "Jane Doe",
       "rollNumber": "CS2026001",
       "department": "Computer Science",
       "year": 4,
-      "createdAt": "2026-09-28T14:00:00.000Z",
-      "updatedAt": "2026-09-28T14:05:00.000Z",
-      "__v": 0
+      "createdAt": "2026-10-07 14:30:00",
+      "updatedAt": "2026-10-07 14:35:00"
     }
   }
   ```
 
-### 5. Delete a Student
-- **Request:** `DELETE http://localhost:5000/students/673f8a9e2b1c4e001f3a9b12`
+### 6. Delete a Student
+- **Request:** `DELETE http://localhost:5000/students/1`
 - **Response (200 OK):**
   ```json
   {
     "success": true,
     "message": "Student deleted successfully",
     "data": {
-      "_id": "673f8a9e2b1c4e001f3a9b12",
+      "id": 1,
       "name": "Jane Doe",
       "rollNumber": "CS2026001",
       "department": "Computer Science",
-      "year": 4
+      "year": 4,
+      "createdAt": "2026-10-07 14:30:00",
+      "updatedAt": "2026-10-07 14:35:00"
     }
   }
   ```
+
+---
+
+## 🛑 Validation and Error Handling Summary
+
+- **400 Bad Request**:
+  - Missing any of the required fields (`name`, `rollNumber`, `department`, `year`) when creating a student.
+  - Supplying empty string values for `name`, `rollNumber`, or `department`.
+  - Supplying a `year` value outside of the integer range `1` to `4`.
+  - Non-numeric or non-positive integer `:id` parameters.
+- **404 Not Found**:
+  - Target `:id` does not exist in the database.
+  - Route not found.
+- **409 Conflict**:
+  - `rollNumber` already exists when creating or updating.
